@@ -136,11 +136,6 @@
     object-fit: cover;
   }
 
-  /* Dark vignette around the scan zone */
-  .scan-mask {
-    position: absolute; inset: 0; pointer-events: none;
-  }
-
   /* The bright target rectangle — drawn via JS on a canvas overlay */
   #overlayCanvas {
     position: absolute; inset: 0;
@@ -407,8 +402,8 @@ let camStream     = null;
 let animFrame     = null;
 
 // The scan rectangle — defined as fraction of screen
-// (centred, wide band for the serial number)
-const ROI = { x: 0.05, y: 0.35, w: 0.90, h: 0.30 };
+// Optimizado para leer el número de serie del billete (rectángulo alargado)
+const ROI = { x: 0.10, y: 0.40, w: 0.80, h: 0.20 };
 
 const ranges = {
   10: [[77100001,77550000],[78000001,78450000],[78900001,96350000],
@@ -509,12 +504,6 @@ function startOverlayDraw() {
     const cs = 20; // corner size
     ctx.strokeStyle = '#a2d44a';
     ctx.lineWidth   = 4;
-    const corners = [
-      [rx, ry, cs, 0, cs, 0],           // top-left
-      [rx + rw, ry, -cs, 0, -cs, 0],    // top-right (mirror x)
-      [rx, ry + rh, cs, 0, cs, 0],      // bottom-left (mirror y)
-      [rx + rw, ry + rh, -cs, 0, -cs, 0] // bottom-right
-    ];
     // Draw corners manually
     [[rx,ry,1,1],[rx+rw,ry,-1,1],[rx,ry+rh,1,-1],[rx+rw,ry+rh,-1,-1]].forEach(([cx,cy,dx,dy]) => {
       ctx.beginPath();
@@ -566,7 +555,7 @@ function shootFrame() {
   const rw = Math.floor(ROI.w * screenW * scaleX);
   const rh = Math.floor(ROI.h * screenH * scaleY);
 
-  // Crop canvas — only the ROI
+  // Crop canvas — only the ROI (pequeña parte rectangular)
   const crop = document.createElement('canvas');
   crop.width  = rw;
   crop.height = rh;
@@ -644,105 +633,4 @@ async function runOCRonCrop(cropCanvas, callback) {
   const H = cropCanvas.height;
 
   // Multiple filter passes on the SAME crop (no more region guessing)
-  const filterPasses = [
-    { filter: 'grayscale(1) contrast(2.5) brightness(1.1)',  scale: 3 },
-    { filter: 'grayscale(1) contrast(3.5) brightness(0.95)', scale: 3 },
-    { filter: 'grayscale(1) contrast(2.0) brightness(1.3)',  scale: 3 },
-    { filter: 'grayscale(1) contrast(4.0) brightness(0.8)',  scale: 3 },
-    { filter: 'grayscale(1) contrast(2.5) brightness(1.1) invert(1)', scale: 3 },
-  ];
-
-  const results = [];
-
-  try {
-    const worker = await Tesseract.createWorker('eng');
-    await worker.setParameters({
-      tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: '7',
-    });
-
-    for (const pass of filterPasses) {
-      const c   = document.createElement('canvas');
-      c.width   = Math.floor(W * pass.scale);
-      c.height  = Math.floor(H * pass.scale);
-      const ctx = c.getContext('2d');
-      ctx.filter = pass.filter;
-      ctx.drawImage(cropCanvas, 0, 0, c.width, c.height);
-
-      const { data: { text, confidence } } = await worker.recognize(c);
-      const digits = text.replace(/\D/g, '').trim();
-      if (digits.length >= 5 && confidence > 15) {
-        results.push({ digits, confidence });
-      }
-    }
-
-    await worker.terminate();
-  } catch(e) { console.warn('OCR error', e); }
-
-  if (!results.length) { callback(null); return; }
-  results.sort((a, b) => b.confidence - a.confidence);
-  callback(results[0].digits);
-}
-
-function setOcrStatus(type, val) {
-  const box = document.getElementById('ocrStatusBox');
-  if (type === 'processing') {
-    box.innerHTML = `<div class="ocr-processing"><div class="ocr-spinner"></div>${val}</div>`;
-  } else if (type === 'success') {
-    box.innerHTML = `
-      <div style="text-align:center">
-        <div style="font-size:0.63rem;font-family:'Exo 2';color:rgba(130,169,56,0.7);letter-spacing:0.1em;margin-bottom:4px">NÚMERO DETECTADO</div>
-        <div class="ocr-success-num">${val}</div>
-        <div style="font-size:0.63rem;font-family:'Exo 2';color:rgba(232,236,240,0.4);margin-top:4px">Corrija abajo si hay un error</div>
-      </div>`;
-  } else {
-    box.innerHTML = `
-      <div style="text-align:center">
-        <div style="font-size:1.2rem;margin-bottom:5px">⚠️</div>
-        <div class="ocr-hint-text">No se detectó el número. Ingrese o corrija manualmente abajo.</div>
-      </div>`;
-  }
-}
-
-function closeOcrModal() { document.getElementById('ocrModal').classList.remove('open'); }
-
-function retryCapture() {
-  closeOcrModal();
-  setTimeout(openScan, 200);
-}
-
-function useNumber() {
-  const val = document.getElementById('ocrEditInput').value.trim();
-  if (val) { document.getElementById('serial').value = val; clearResult(); }
-  closeOcrModal();
-}
-
-/* ══════════════════════════════════════
-   VERIFY
-══════════════════════════════════════ */
-function verificar() {
-  const input = document.getElementById('serial').value.trim();
-  if (!selectedDenom) { showResult('warn','⚠️','⚠ Seleccione una denominación','Elija 10, 20 o 50 Bs primero.'); return; }
-  if (!input || isNaN(input)) { showResult('warn','⚠️','⚠ Número inválido','Ingrese un número de serie válido.'); return; }
-  const num = parseInt(input);
-  let noValido = false;
-  for (const [d, h] of ranges[selectedDenom]) { if (num >= d && num <= h) { noValido = true; break; } }
-  if (noValido) {
-    showResult('invalid','🚫','No tienen valor legal',`Billete de ${selectedDenom} Bs — Serie: ${num.toLocaleString()}`);
-  } else {
-    showResult('valid','✅','Tiene valor legal',`Billete de ${selectedDenom} Bs — Serie: ${num.toLocaleString()}`);
-  }
-}
-
-function showResult(cls, icon, msg, sub) {
-  document.getElementById('result-box').className = 'result-box ' + cls;
-  document.getElementById('result-icon').textContent = icon;
-  document.getElementById('result-text').textContent = msg;
-  document.getElementById('result-sub').textContent  = sub;
-  document.getElementById('result').classList.add('show');
-}
-
-document.getElementById('serial').addEventListener('keydown', e => { if (e.key === 'Enter') verificar(); });
-</script>
-</body>
-</html>
+  const filterPasses
