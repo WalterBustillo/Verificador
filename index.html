@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alpha Systems - Verificador de Billetes</title>
+<title>Alpha Fantasia — Verificador de Billetes</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;600&display=swap');
 
@@ -67,7 +68,6 @@
     opacity: 0.9;
   }
 
-  /* Denomination buttons */
   .denom-group {
     display: flex;
     gap: 0.75rem;
@@ -111,27 +111,32 @@
     margin-top: 2px;
   }
 
-  /* Divider */
   .divider {
     border: none;
     border-top: 1px solid rgba(255,255,255,0.08);
     margin: 0 0 1.8rem;
   }
 
-  /* Input */
+  /* Input row with camera button */
+  .input-row {
+    display: flex;
+    gap: 0.6rem;
+    margin-bottom: 1.4rem;
+    align-items: stretch;
+  }
+
   .input-field {
-    width: 100%;
+    flex: 1;
     background: rgba(0,0,0,0.2);
     border: 1.5px solid rgba(255,255,255,0.12);
     border-radius: 10px;
     color: var(--white);
     font-family: 'Rajdhani', sans-serif;
-    font-size: 1.6rem;
+    font-size: 1.5rem;
     font-weight: 600;
     letter-spacing: 0.1em;
-    padding: 1rem 1.2rem;
+    padding: 0.9rem 1.1rem;
     outline: none;
-    margin-bottom: 1.4rem;
     transition: border-color 0.2s;
     -moz-appearance: textfield;
   }
@@ -142,13 +147,242 @@
   .input-field::placeholder {
     color: rgba(232,236,240,0.25);
     font-weight: 400;
-    font-size: 1rem;
+    font-size: 0.9rem;
     letter-spacing: 0.04em;
   }
 
-  .input-field:focus {
+  .input-field:focus { border-color: var(--green); }
+
+  .cam-btn {
+    background: rgba(130,169,56,0.15);
+    border: 1.5px solid rgba(130,169,56,0.35);
+    border-radius: 10px;
+    color: var(--green-bright);
+    cursor: pointer;
+    padding: 0 1rem;
+    font-size: 1.4rem;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .cam-btn:hover {
+    background: rgba(130,169,56,0.28);
     border-color: var(--green);
   }
+
+  .cam-btn.active {
+    background: rgba(130,169,56,0.35);
+    border-color: var(--green-bright);
+  }
+
+  /* Camera modal overlay */
+  .cam-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 100;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+
+  .cam-modal.open { display: flex; }
+
+  .cam-inner {
+    background: #2a2d30;
+    border-radius: 16px;
+    padding: 1.5rem;
+    width: 100%;
+    max-width: 440px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+
+  .cam-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.2rem;
+  }
+
+  .cam-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--green);
+  }
+
+  .cam-close {
+    background: rgba(255,255,255,0.08);
+    border: none;
+    color: var(--white);
+    border-radius: 6px;
+    width: 30px; height: 30px;
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+
+  .cam-close:hover { background: rgba(255,255,255,0.15); }
+
+  /* Video container */
+  .video-wrap {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 4/3;
+    margin-bottom: 1rem;
+  }
+
+  #camVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* Scan guide overlay */
+  .scan-guide {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .scan-box {
+    width: 80%;
+    height: 22%;
+    border: 2px solid var(--green);
+    border-radius: 6px;
+    position: relative;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);
+  }
+
+  .scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--green-bright), transparent);
+    top: 0;
+    animation: scanMove 2s ease-in-out infinite;
+  }
+
+  @keyframes scanMove {
+    0%   { top: 0%; opacity: 1; }
+    50%  { top: calc(100% - 2px); opacity: 1; }
+    100% { top: 0%; opacity: 1; }
+  }
+
+  .scan-corner {
+    position: absolute;
+    width: 14px; height: 14px;
+    border-color: var(--green-bright);
+    border-style: solid;
+  }
+  .scan-corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 3px 0 0 0; }
+  .scan-corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 3px 0 0; }
+  .scan-corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 3px; }
+  .scan-corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 3px 0; }
+
+  /* OCR status */
+  .ocr-status {
+    text-align: center;
+    margin-bottom: 1rem;
+    min-height: 2.8rem;
+  }
+
+  .ocr-hint {
+    font-size: 0.72rem;
+    font-family: 'Exo 2', sans-serif;
+    color: rgba(232,236,240,0.5);
+    letter-spacing: 0.05em;
+  }
+
+  .ocr-detecting {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-family: 'Rajdhani', sans-serif;
+    letter-spacing: 0.12em;
+    color: var(--green);
+  }
+
+  .ocr-spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(130,169,56,0.3);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .ocr-found {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--green-bright);
+  }
+
+  /* Capture & confirm buttons */
+  .cam-actions {
+    display: flex;
+    gap: 0.6rem;
+  }
+
+  .btn-capture {
+    flex: 1;
+    background: linear-gradient(135deg, var(--green-dim), var(--green));
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-capture:hover { filter: brightness(1.12); }
+  .btn-capture:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+
+  .btn-confirm {
+    flex: 1;
+    background: rgba(130,169,56,0.2);
+    border: 1.5px solid var(--green);
+    border-radius: 10px;
+    color: var(--green-bright);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: none;
+  }
+
+  .btn-confirm.show { display: block; }
+  .btn-confirm:hover { background: rgba(130,169,56,0.35); }
+
+  /* Canvas hidden */
+  #snapCanvas { display: none; }
 
   /* Verify button */
   .verify-btn {
@@ -176,11 +410,7 @@
   .verify-btn:active { transform: translateY(0); }
 
   /* Result */
-  .result-wrap {
-    margin-top: 1.5rem;
-    display: none;
-  }
-
+  .result-wrap { margin-top: 1.5rem; display: none; }
   .result-wrap.show { display: block; }
 
   .result-box {
@@ -228,7 +458,7 @@
 
   @keyframes fadeSlide {
     from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
   /* Disclaimer */
@@ -254,6 +484,42 @@
 </style>
 </head>
 <body>
+
+<!-- Camera Modal -->
+<div class="cam-modal" id="camModal">
+  <div class="cam-inner">
+    <div class="cam-header">
+      <span class="cam-title">📷 Escanear número de serie</span>
+      <button class="cam-close" onclick="closeCamera()">✕</button>
+    </div>
+
+    <div class="video-wrap">
+      <video id="camVideo" autoplay playsinline muted></video>
+      <div class="scan-guide">
+        <div class="scan-box">
+          <div class="scan-line"></div>
+          <div class="scan-corner tl"></div>
+          <div class="scan-corner tr"></div>
+          <div class="scan-corner bl"></div>
+          <div class="scan-corner br"></div>
+        </div>
+      </div>
+    </div>
+
+    <canvas id="snapCanvas"></canvas>
+
+    <div class="ocr-status" id="ocrStatus">
+      <p class="ocr-hint">Apunte la cámara al número de serie del billete y presione Capturar</p>
+    </div>
+
+    <div class="cam-actions">
+      <button class="btn-capture" id="btnCapture" onclick="capturar()">📸 Capturar</button>
+      <button class="btn-confirm show" id="btnConfirm" onclick="confirmarNumero()" style="display:none">✔ Usar este número</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main -->
 <div class="container">
 
   <div class="logo-wrap">
@@ -263,27 +529,24 @@
   <div class="card">
     <p class="section-title">Denominación del billete</p>
     <div class="denom-group">
-      <button class="denom-btn" data-value="10" onclick="selectDenom(this)">
-        10 <span class="denom-label">Bs</span>
-      </button>
-      <button class="denom-btn" data-value="20" onclick="selectDenom(this)">
-        20 <span class="denom-label">Bs</span>
-      </button>
-      <button class="denom-btn" data-value="50" onclick="selectDenom(this)">
-        50 <span class="denom-label">Bs</span>
-      </button>
+      <button class="denom-btn" data-value="10" onclick="selectDenom(this)">10<span class="denom-label">Bs</span></button>
+      <button class="denom-btn" data-value="20" onclick="selectDenom(this)">20<span class="denom-label">Bs</span></button>
+      <button class="denom-btn" data-value="50" onclick="selectDenom(this)">50<span class="denom-label">Bs</span></button>
     </div>
 
     <hr class="divider">
 
     <p class="section-title">Número de serie</p>
-    <input
-      type="number"
-      class="input-field"
-      id="serial"
-      placeholder="Ingrese el número de serie..."
-      oninput="clearResult()"
-    />
+    <div class="input-row">
+      <input
+        type="number"
+        class="input-field"
+        id="serial"
+        placeholder="Ingrese o escanee el número..."
+        oninput="clearResult()"
+      />
+      <button class="cam-btn" onclick="openCamera()" title="Escanear con cámara">📷</button>
+    </div>
 
     <button class="verify-btn" onclick="verificar()">Verificar Billete</button>
 
@@ -308,6 +571,8 @@
 
 <script>
   let selectedDenom = null;
+  let camStream = null;
+  let ocrResult = null;
 
   const ranges = {
     10: [
@@ -343,6 +608,110 @@
     document.getElementById('result').classList.remove('show');
   }
 
+  // ── CAMERA ──────────────────────────────────────────
+  async function openCamera() {
+    ocrResult = null;
+    document.getElementById('btnConfirm').style.display = 'none';
+    setOcrStatus('hint', 'Apunte la cámara al número de serie del billete y presione Capturar');
+    document.getElementById('camModal').classList.add('open');
+
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      document.getElementById('camVideo').srcObject = camStream;
+    } catch(e) {
+      setOcrStatus('hint', '⚠ No se pudo acceder a la cámara. Verifique los permisos.');
+      document.getElementById('btnCapture').disabled = true;
+    }
+  }
+
+  function closeCamera() {
+    if (camStream) {
+      camStream.getTracks().forEach(t => t.stop());
+      camStream = null;
+    }
+    document.getElementById('camModal').classList.remove('open');
+    document.getElementById('btnCapture').disabled = false;
+  }
+
+  async function capturar() {
+    const video = document.getElementById('camVideo');
+    const canvas = document.getElementById('snapCanvas');
+    const btn = document.getElementById('btnCapture');
+
+    // Snap frame
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+
+    // Crop the center strip matching scan-box (80% wide, 22% tall, centered)
+    const cropW = Math.floor(canvas.width * 0.80);
+    const cropH = Math.floor(canvas.height * 0.26);
+    const cropX = Math.floor((canvas.width - cropW) / 2);
+    const cropY = Math.floor((canvas.height - cropH) / 2);
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width  = cropW;
+    cropCanvas.height = cropH;
+    const cropCtx = cropCanvas.getContext('2d');
+
+    // Contrast + grayscale pre-processing for better OCR
+    cropCtx.filter = 'grayscale(1) contrast(2.2) brightness(1.1)';
+    cropCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+    btn.disabled = true;
+    setOcrStatus('detecting', 'Analizando imagen...');
+
+    try {
+      const worker = await Tesseract.createWorker('eng');
+      await worker.setParameters({
+        tessedit_char_whitelist: '0123456789',
+        tessedit_pageseg_mode: '7',  // single text line
+      });
+
+      const { data: { text, confidence } } = await worker.recognize(cropCanvas);
+      await worker.terminate();
+
+      // Extract digits only
+      const digits = text.replace(/\D/g, '').trim();
+
+      if (digits.length >= 6) {
+        ocrResult = digits;
+        setOcrStatus('found', `Número detectado: ${digits}  (confianza: ${Math.round(confidence)}%)`);
+        document.getElementById('btnConfirm').style.display = 'block';
+      } else {
+        setOcrStatus('hint', '⚠ No se detectó un número claro. Intente con mejor iluminación o acerque más la cámara.');
+        ocrResult = null;
+      }
+    } catch(e) {
+      setOcrStatus('hint', '⚠ Error al procesar la imagen. Intente nuevamente.');
+    }
+
+    btn.disabled = false;
+  }
+
+  function confirmarNumero() {
+    if (ocrResult) {
+      document.getElementById('serial').value = ocrResult;
+      clearResult();
+      closeCamera();
+    }
+  }
+
+  function setOcrStatus(type, msg) {
+    const el = document.getElementById('ocrStatus');
+    if (type === 'hint') {
+      el.innerHTML = `<p class="ocr-hint">${msg}</p>`;
+    } else if (type === 'detecting') {
+      el.innerHTML = `<div class="ocr-detecting"><div class="ocr-spinner"></div>${msg}</div>`;
+    } else if (type === 'found') {
+      el.innerHTML = `<div class="ocr-found">✔ ${msg}</div>`;
+    }
+  }
+
+  // ── VERIFY ───────────────────────────────────────────
   function verificar() {
     const input = document.getElementById('serial').value.trim();
     if (!selectedDenom) {
@@ -376,6 +745,11 @@
 
   document.getElementById('serial').addEventListener('keydown', e => {
     if (e.key === 'Enter') verificar();
+  });
+
+  // Close modal on backdrop click
+  document.getElementById('camModal').addEventListener('click', function(e) {
+    if (e.target === this) closeCamera();
   });
 </script>
 </body>
